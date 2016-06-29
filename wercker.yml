@@ -1,0 +1,91 @@
+# This references the default nodejs container from
+# the Docker Hub: https://registry.hub.docker.com/_/node/
+# If you want Nodesource's container you would reference nodesource/node
+# Read more about containers on our dev center
+# http://devcenter.wercker.com/docs/containers/index.html
+box: node
+# This is the build pipeline. Pipelines are the core of wercker
+# Read more about pipelines on our dev center
+# http://devcenter.wercker.com/docs/pipelines/index.html
+
+# You can also use services such as databases. Read more on our dev center:
+# http://devcenter.wercker.com/docs/services/index.html
+# services:
+    # - postgres
+    # http://devcenter.wercker.com/docs/services/postgresql.html
+
+    # - mongodb
+    # http://devcenter.wercker.com/docs/services/mongodb.html
+build:
+  # The steps that will be executed on build
+  # Steps make up the actions in your pipeline
+  # Read more about steps on our dev center:
+  # http://devcenter.wercker.com/docs/steps/index.html
+  steps:
+    - npm-install
+    # A step that executes `npm test` command
+    - npm-test
+
+    # A custom script step, name value is used in the UI
+    # and the code value contains the command that get executed
+    - script:
+        name: echo nodejs information
+        code: |
+          echo "node version $(node -v) running"
+          echo "npm version $(npm -v) running"
+
+deploy:
+  steps:
+    - install-packages:
+        packages: unzip wget git python libyaml-dev libpython2.7-dev
+    - script:
+        name: Install Beanstalk CLI
+        code: |-
+          curl -O https://bootstrap.pypa.io/get-pip.py
+          sudo python get-pip.py
+          sudo pip install pyyaml
+          sudo pip install awsebcli
+          sudo mkdir -p /usr/local/aws/elasticbeanstalk
+          mkdir -p ~/.aws/
+          mkdir -p "$WERCKER_SOURCE_DIR/.elasticbeanstalk/"
+          export PATH="/usr/local/aws/elasticbeanstalk/eb/linux/python2.7:$PATH"
+          export AWS_CREDENTIAL_FILE=~/.aws/credentials
+          export EBS_CONFIG_FILE="$WERCKER_SOURCE_DIR/.elasticbeanstalk/config.yml"
+
+    - create-file:
+        name: Create AWS credential file
+        filename: $AWS_CREDENTIAL_FILE
+        content: |
+            [default]
+            aws_access_key_id = $KEY
+            aws_secret_access_key = $SECRET_KEY
+
+    # Env conditional deploy steps
+    - script:
+        name: Run environment specific deploy steps
+        code: cat $WERCKER_SOURCE_DIR/.ebextensions/config.tpl > $EBS_CONFIG_FILE
+
+    # Remove the existing repository and re-add everything
+    # in a new repository that will be used to push it to beanstalk
+    # The last line in this script add the beanstalk hooks to the
+    # repository
+    - script:
+        name: Create deploy repository
+        code: |-
+            cd $WERCKER_SOURCE_DIR
+            git config --global user.email "pleasemailus@wercker.com"
+            git config --global user.name "wercker"
+            rm -rf $WERCKER_SOURCE_DIR/.git
+            rm -rf $WERCKER_SOURCE_DIR/*/.git
+            echo -e ".elasticbeanstalk" > .gitignore
+            git init
+            git add .
+            git commit -m "deploy commit"
+
+    # Do the actual deploy via the aws.push hook that the Beanstalk CLI adds
+    - script:
+        name: Push it!
+        code: |-
+          eb list
+          eb status
+          eb deploy
