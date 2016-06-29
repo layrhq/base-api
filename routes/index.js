@@ -35,9 +35,9 @@ router.post('/authenticate_user', function(req, res, next) {
         } else {
           return res.status(500).send('google access_token invalid');
         }
-        // if (data.hd !== 'layrconsulting.com') {
-        //   return res.status(403).send('email host invalid');
-        // }
+        if (data.hd !== 'layrconsulting.com') {
+          return res.status(403).send('email host invalid');
+        }
 
         console.log('google data:', data);
 
